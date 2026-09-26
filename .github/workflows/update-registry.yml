@@ -1,42 +1,40 @@
-name: Update Plugin Registry
+name: Prepare Development Package Index
 
+# Publication is deferred. This workflow only produces a review artifact; it
+# neither commits generated files nor publishes unverified binary URLs.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'plugins/**'
-  # Allow manual trigger
   workflow_dispatch:
-  # Run daily to pick up new releases from plugin repos
-  schedule:
-    - cron: '17 3 * * *'
+    inputs:
+      tooling_commit:
+        description: Approved full OBCX core commit containing package-tool 2.0.0
+        required: true
+        type: string
 
 permissions:
-  contents: write
-  pages: write
-  id-token: write
+  contents: read
 
 jobs:
-  build:
+  prepare:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
+      - name: Validate explicit tooling commit
+        env:
+          TOOLING_COMMIT: ${{ inputs.tooling_commit }}
+        run: python3 -c 'import os,re; assert re.fullmatch(r"[0-9a-f]{40}", os.environ["TOOLING_COMMIT"]), "A full core commit is required"'
+      - uses: actions/checkout@v4
+        with:
+          repository: Onebot-CXX/OBCX
+          ref: ${{ inputs.tooling_commit }}
+          path: tooling
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-
-      - name: Install tomli (for Python < 3.11 compat)
-        run: pip install tomli
-
-      - name: Generate index
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python3 scripts/generate_index.py
-
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+          python-version: "3.12"
+      - name: Generate metadata-only index
+        run: >-
+          python3 generate_package_index.py --tool tooling/cmake/package_tool.py
+          generate --entries entries --output index/packages.json
+      - uses: actions/upload-artifact@v4
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist
-          force_orphan: true
+          name: development-package-index
+          path: index/packages.json
